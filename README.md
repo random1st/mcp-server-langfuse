@@ -4,9 +4,7 @@
 
 ## Demo
 
-Quick demo of Langfuse Prompts MCP in Claude Desktop
-
-_Unmute for voice-over_
+Quick demo of Langfuse Prompts MCP in Claude Desktop (_unmute for voice-over explanations_):
 
 https://github.com/user-attachments/assets/61da79af-07c2-4f69-b28c-ca7c6e606405
 
