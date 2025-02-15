@@ -59,10 +59,9 @@ npm run build
 
 #### Claude Desktop
 
-Configure Claude for Desktop by editing your configuration file:
+Configure Claude for Desktop by editing `claude_desktop_config.json`
 
 ```json
-// claude_desktop_config.json
 {
   "mcpServers": {
     "langfuse": {
