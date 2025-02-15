@@ -1,232 +1,225 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  ListPromptsRequestSchema,
+  ListPromptsRequest,
+  ListPromptsResult,
+  GetPromptRequestSchema,
+  GetPromptRequest,
+  GetPromptResult,
+  CallToolResult,
+} from "@modelcontextprotocol/sdk/types.js";
+import { Langfuse, ChatPromptClient } from "langfuse";
+import { extractVariables } from "./utils.js";
 import { z } from "zod";
 
-const NWS_API_BASE = "https://api.weather.gov";
-const USER_AGENT = "weather-app/1.0";
+// Requires Environment Variables
+const langfuse = new Langfuse();
 
-// Create server instance
-const server = new McpServer({
-  name: "weather",
-  version: "1.0.0",
-});
+// Create MCP server instance with a "prompts" capability.
+const server = new McpServer(
+  {
+    name: "langfuse-prompts",
+    version: "1.0.0",
+  },
+  {
+    capabilities: {
+      prompts: {},
+    },
+  }
+);
 
-// Helper function for making NWS API requests
-async function makeNWSRequest<T>(url: string): Promise<T | null> {
-  const headers = {
-    "User-Agent": USER_AGENT,
-    Accept: "application/geo+json",
-  };
-
+async function listPromptsHandler(
+  request: ListPromptsRequest
+): Promise<ListPromptsResult> {
   try {
-    const response = await fetch(url, { headers });
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    const cursor = request.params?.cursor;
+    const page = cursor ? Number(cursor) : 1;
+    if (cursor !== undefined && isNaN(page)) {
+      throw new Error("Cursor must be a valid number");
     }
-    return (await response.json()) as T;
+
+    const res = await langfuse.api.promptsList({
+      limit: 100,
+      page,
+      label: "production",
+    });
+
+    const resPrompts: ListPromptsResult["prompts"] = await Promise.all(
+      res.data.map(async (i) => {
+        const prompt = await langfuse.getPrompt(i.name, undefined, {
+          cacheTtlSeconds: 0,
+        });
+        const variables = extractVariables(JSON.stringify(prompt.prompt));
+        return {
+          name: i.name,
+          arguments: variables.map((v) => ({
+            name: v,
+            required: false,
+          })),
+        };
+      })
+    );
+
+    return {
+      prompts: resPrompts,
+      nextCursor:
+        res.meta.totalPages > page ? (page + 1).toString() : undefined,
+    };
   } catch (error) {
-    console.error("Error making NWS request:", error);
-    return null;
+    console.error("Error fetching prompts:", error);
+    throw new Error("Failed to fetch prompts");
   }
 }
 
-interface AlertFeature {
-  properties: {
-    event?: string;
-    areaDesc?: string;
-    severity?: string;
-    status?: string;
-    headline?: string;
-  };
+async function getPromptHandler(
+  request: GetPromptRequest
+): Promise<GetPromptResult> {
+  const promptName: string = request.params.name;
+  const args = request.params.arguments || {};
+
+  try {
+    // Initialize Langfuse client and fetch the prompt by name.
+    let compiledTextPrompt: string | undefined;
+    let compiledChatPrompt: ChatPromptClient["prompt"] | undefined; // Langfuse chat prompt type
+
+    try {
+      // try chat prompt type first
+      const prompt = await langfuse.getPrompt(promptName, undefined, {
+        type: "chat",
+      });
+      if (prompt.type !== "chat") {
+        throw new Error(`Prompt '${promptName}' is not a chat prompt`);
+      }
+      compiledChatPrompt = prompt.compile(args);
+    } catch (error) {
+      // fallback to text prompt type
+      const prompt = await langfuse.getPrompt(promptName, undefined, {
+        type: "text",
+      });
+      compiledTextPrompt = prompt.compile(args);
+    }
+
+    if (compiledChatPrompt) {
+      const result: GetPromptResult = {
+        messages: compiledChatPrompt.map((msg) => ({
+          role: ["ai", "assistant"].includes(msg.role) ? "assistant" : "user",
+          content: {
+            type: "text",
+            text: msg.content,
+          },
+        })),
+      };
+      return result;
+    } else if (compiledTextPrompt) {
+      const result: GetPromptResult = {
+        messages: [
+          {
+            role: "user",
+            content: { type: "text", text: compiledTextPrompt },
+          },
+        ],
+      };
+      return result;
+    } else {
+      throw new Error(`Failed to get prompt for '${promptName}'`);
+    }
+  } catch (error: any) {
+    throw new Error(
+      `Failed to get prompt for '${promptName}': ${error.message}`
+    );
+  }
 }
 
-// Format alert data
-function formatAlert(feature: AlertFeature): string {
-  const props = feature.properties;
-  return [
-    `Event: ${props.event || "Unknown"}`,
-    `Area: ${props.areaDesc || "Unknown"}`,
-    `Severity: ${props.severity || "Unknown"}`,
-    `Status: ${props.status || "Unknown"}`,
-    `Headline: ${props.headline || "No headline"}`,
-    "---",
-  ].join("\n");
-}
+// Register handlers
+server.server.setRequestHandler(ListPromptsRequestSchema, listPromptsHandler);
+server.server.setRequestHandler(GetPromptRequestSchema, getPromptHandler);
 
-interface ForecastPeriod {
-  name?: string;
-  temperature?: number;
-  temperatureUnit?: string;
-  windSpeed?: string;
-  windDirection?: string;
-  shortForecast?: string;
-}
-
-interface AlertsResponse {
-  features: AlertFeature[];
-}
-
-interface PointsResponse {
-  properties: {
-    forecast?: string;
-  };
-}
-
-interface ForecastResponse {
-  properties: {
-    periods: ForecastPeriod[];
-  };
-}
-
-// Register weather tools
+// Tools for compatibility
 server.tool(
-  "get-alerts",
-  "Get weather alerts for a state",
+  "get-prompts",
+  "Get prompts that are stored in Langfuse",
   {
-    state: z.string().length(2).describe("Two-letter state code (e.g. CA, NY)"),
+    cursor: z
+      .string()
+      .optional()
+      .describe("Cursor to paginate through prompts"),
   },
-  async ({ state }) => {
-    const stateCode = state.toUpperCase();
-    const alertsUrl = `${NWS_API_BASE}/alerts?area=${stateCode}`;
-    const alertsData = await makeNWSRequest<AlertsResponse>(alertsUrl);
-
-    if (!alertsData) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: "Failed to retrieve alerts data",
-          },
-        ],
-      };
-    }
-
-    const features = alertsData.features || [];
-    if (features.length === 0) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `No active alerts for ${stateCode}`,
-          },
-        ],
-      };
-    }
-
-    const formattedAlerts = features.map(formatAlert);
-    const alertsText = `Active alerts for ${stateCode}:\n\n${formattedAlerts.join(
-      "\n"
-    )}`;
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: alertsText,
+  async (args) => {
+    try {
+      const res = await listPromptsHandler({
+        method: "prompts/list",
+        params: {
+          cursor: args.cursor,
         },
-      ],
-    };
+      });
+
+      const parsedRes: CallToolResult = {
+        content: res.prompts.map((p) => ({
+          type: "text",
+          text: JSON.stringify(p),
+        })),
+      };
+
+      return parsedRes;
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: "Error: " + error }],
+        isError: true,
+      };
+    }
   }
 );
 
 server.tool(
-  "get-forecast",
-  "Get weather forecast for a location",
+  "get-prompt",
+  "Get a prompt that is stored in Langfuse",
   {
-    latitude: z.number().min(-90).max(90).describe("Latitude of the location"),
-    longitude: z
-      .number()
-      .min(-180)
-      .max(180)
-      .describe("Longitude of the location"),
+    name: z
+      .string()
+      .describe(
+        "Name of the prompt to retrieve, use get-prompts to get a list of prompts"
+      ),
+    arguments: z
+      .record(z.string())
+      .optional()
+      .describe(
+        'Arguments with prompt variables to pass to the prompt template, json object, e.g. {"<name>":"<value>"}'
+      ),
   },
-  async ({ latitude, longitude }) => {
-    // Get grid point data
-    const pointsUrl = `${NWS_API_BASE}/points/${latitude.toFixed(
-      4
-    )},${longitude.toFixed(4)}`;
-    const pointsData = await makeNWSRequest<PointsResponse>(pointsUrl);
-
-    if (!pointsData) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Failed to retrieve grid point data for coordinates: ${latitude}, ${longitude}. This location may not be supported by the NWS API (only US locations are supported).`,
-          },
-        ],
-      };
-    }
-
-    const forecastUrl = pointsData.properties?.forecast;
-    if (!forecastUrl) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: "Failed to get forecast URL from grid point data",
-          },
-        ],
-      };
-    }
-
-    // Get forecast data
-    const forecastData = await makeNWSRequest<ForecastResponse>(forecastUrl);
-    if (!forecastData) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: "Failed to retrieve forecast data",
-          },
-        ],
-      };
-    }
-
-    const periods = forecastData.properties?.periods || [];
-    if (periods.length === 0) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: "No forecast periods available",
-          },
-        ],
-      };
-    }
-
-    // Format forecast periods
-    const formattedForecast = periods.map((period: ForecastPeriod) =>
-      [
-        `${period.name || "Unknown"}:`,
-        `Temperature: ${period.temperature || "Unknown"}°${
-          period.temperatureUnit || "F"
-        }`,
-        `Wind: ${period.windSpeed || "Unknown"} ${period.windDirection || ""}`,
-        `${period.shortForecast || "No forecast available"}`,
-        "---",
-      ].join("\n")
-    );
-
-    const forecastText = `Forecast for ${latitude}, ${longitude}:\n\n${formattedForecast.join(
-      "\n"
-    )}`;
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: forecastText,
+  async (args, extra) => {
+    try {
+      const res = await getPromptHandler({
+        method: "prompts/get",
+        params: {
+          name: args.name,
+          arguments: args.arguments,
         },
-      ],
-    };
+      });
+
+      const parsedRes: CallToolResult = {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(res),
+          },
+        ],
+      };
+
+      return parsedRes;
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: "Error: " + error }],
+        isError: true,
+      };
+    }
   }
 );
 
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Weather MCP Server running on stdio");
+  console.error("Langfuse Prompts MCP Server running on stdio");
 }
 
 main().catch((error) => {
