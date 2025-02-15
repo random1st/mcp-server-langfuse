@@ -2,6 +2,14 @@
 
 [Model Context Protocol](https://github.com/modelcontextprotocol) (MCP) Server for [Langfuse Prompt Management](https://langfuse.com/docs/prompts/get-started). This server allows you to access and manage your Langfuse prompts through the Model Context Protocol.
 
+## Demo
+
+Quick demo of Langfuse Prompts MCP in Claude Desktop
+
+_Unmute for voice-over_
+
+https://github.com/user-attachments/assets/61da79af-07c2-4f69-b28c-ca7c6e606405
+
 ## Features
 
 ### MCP Prompt
