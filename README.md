@@ -14,8 +14,6 @@ https://github.com/user-attachments/assets/61da79af-07c2-4f69-b28c-ca7c6e606405
 
 This server implements the [MCP Prompts specification](https://modelcontextprotocol.io/docs/concepts/prompts) for prompt discovery and retrieval.
 
-Only prompts with a `production` label in Langfuse are returned.
-
 - `prompts/list`: List all available prompts
 
   - Optional cursor-based pagination
@@ -96,7 +94,12 @@ Add new server to Cursor:
   LANGFUSE_PUBLIC_KEY="your-public-key" LANGFUSE_SECRET_KEY="your-secret-key" LANGFUSE_BASEURL="https://cloud.langfuse.com" node absolute-path/build/index.js
   ```
 
-## Potential Improvements to Langfuse in order to better support MCP
+## Limitations
 
-- [ ] Add support for prompt variable descriptions
-- [ ] Return available variables on the /prompts endpoint to reduce the number of requests
+The MCP Server is a work in progress and has some limitations:
+
+- Only prompts with a `production` label in Langfuse are returned
+- All arguments are assumed to be optional and do not include descriptions as variables do not have specification in Langfuse
+- List operations require fetching each prompt individually in the background to extract the arguments, this works but is not efficient
+
+Contributions are welcome! Please open an issue or a PR ([repo](https://github.com/langfuse/mcp-server-langfuse)) if you have any suggestions or feedback.
