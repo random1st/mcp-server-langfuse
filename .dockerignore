@@ -1,0 +1,14 @@
+.dockerignore
+Dockerfile
+docker-compose.yml
+
+.git
+.gitignore
+
+.cursor
+.vscode
+
+node_modules
+.env
+dist
+build
