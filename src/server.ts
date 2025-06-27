@@ -18,6 +18,8 @@ app.post('/mcp', async (req: express.Request, res: express.Response) => {
   const sessionId =
     (req.headers[MCP_SESSION_HEADER_FIELD] as string) || undefined;
 
+  console.log(`Handle for session ID: ${sessionId ?? 'undefined'}`);
+
   let transport: StreamableHTTPServerTransport;
 
   const existing_transport = sessionId ? transports.get(sessionId) : undefined;

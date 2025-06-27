@@ -19,6 +19,8 @@ const langfuse = new Langfuse();
 async function getPromptHandler(
   request: GetPromptRequest,
 ): Promise<GetPromptResult> {
+  console.log('Handing get prompt request');
+
   const promptName: string = request.params.name;
   const args = request.params.arguments ?? {};
 
@@ -80,6 +82,8 @@ async function getPromptHandler(
 async function listPromptsHandler(
   request: ListPromptsRequest,
 ): Promise<ListPromptsResult> {
+  console.log('Handing list prompt request');
+
   try {
     const cursor = request.params?.cursor;
     const page = cursor ? Number(cursor) : 1;
