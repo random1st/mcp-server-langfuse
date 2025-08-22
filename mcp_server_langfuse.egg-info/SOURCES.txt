@@ -1,0 +1,8 @@
+LICENSE
+README.md
+pyproject.toml
+mcp_server_langfuse.egg-info/PKG-INFO
+mcp_server_langfuse.egg-info/SOURCES.txt
+mcp_server_langfuse.egg-info/dependency_links.txt
+mcp_server_langfuse.egg-info/requires.txt
+mcp_server_langfuse.egg-info/top_level.txt

@@ -1,0 +1,17 @@
+Metadata-Version: 2.4
+Name: mcp-server-langfuse
+Version: 0.1.0
+Summary: A MCP Server for Langfuse Prompt Management, rewritten in Python.
+Author-email: Jules <jules@example.com>
+Requires-Python: >=3.10
+License-File: LICENSE
+Requires-Dist: fastmcp
+Requires-Dist: langfuse
+Requires-Dist: python-dotenv
+Requires-Dist: pydantic
+Provides-Extra: dev
+Requires-Dist: ruff; extra == "dev"
+Requires-Dist: mypy; extra == "dev"
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: uv; extra == "dev"
+Dynamic: license-file

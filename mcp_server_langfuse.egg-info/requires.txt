@@ -1,0 +1,10 @@
+fastmcp
+langfuse
+python-dotenv
+pydantic
+
+[dev]
+ruff
+mypy
+pytest
+uv
